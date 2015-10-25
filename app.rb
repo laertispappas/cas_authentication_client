@@ -3,9 +3,17 @@ class App < Sinatra::Base
     haml :index
   end
 
+  enable :sessions
+
+  before do
+    @server = "http://localhost:7890"
+    @client = "http://localhost:4567"
+    check_service_ticket
+  end
+
   get '/protected' do
     authenticate_user!
-    @user = nil
+    @user = current_user
     haml :protected
   end
 
@@ -21,21 +29,31 @@ class App < Sinatra::Base
     end
   end
 
+  private
+
+  def logged_in?
+    current_user
+  end
+
+  def current_user
+    session[:user]
+  end
+
   def service_ticket?
     params[:ticket]
   end
 
   def login
-    redirect "http://localhost:7890/login?service=#{URI.encode("http://localhost:4567")}"
+    redirect "#{@server}/login?service=#{URI.encode(@client)}"
   end
 
   def validate
     hash = {
-      service: URI.encode("http://localhost:4567"),
+      service: URI.encode(@client),
       ticket: params[:ticket]
     }
 
-    xml_response = HTTParty.get("http://localhost:7890/p3/serviceValidate?#{parameterize(hash)}").body
+    xml_response = HTTParty.get("#{@server}/p3/serviceValidate?#{parameterize(hash)}").body
     xml = Nokogiri::XML xml_response
 
     if xml.xpath("//cas:authenticationSuccess")
@@ -48,5 +66,11 @@ class App < Sinatra::Base
 
   def parameterize hash
     hash.map { |k, v| "#{k.to_s}=#{v}" }.join "&"
+  end
+
+  def check_service_ticket
+    if service_ticket?
+      validate
+    end
   end
 end
